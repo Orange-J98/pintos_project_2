@@ -25,6 +25,8 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+  /*process_excute成为用户程序的执行入口。process_execute的返回值
+  为创建线程的tid，process_wait的作用是用来等待新创建线程的结束*/
 tid_t
 process_execute (const char *file_name) 
 {
@@ -76,6 +78,38 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+
+/*The following code is about process_wait()*/
+
+bool is_child(tid_t tid, bool delete){
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+  /*
+  Traverse the list of child threads of the current thread and find that
+  if this thread is the current thread's child
+  */
+   for(e = list_begin(&cur->children); e != list_end(&cur->children);e = list_next(e)){
+    // TODO: thread was freed!
+    int child_tid = list_entry(e,struct process,elem)->thread;
+    if(tid == child_tid){
+      if(delete){
+        /*当子线程已经执行完，即可删除它。调用list中的list_remove函数即可实现列表的删除操作。*/
+        list_remove(e);
+        free(list_entry(e,struct process,elem));
+      }
+      return true;
+    }
+  }
+  return false;
+}
+/*
+return true if current can wait this process
+如果当前可以等待此进程,则返回true
+*/
+bool can_wait(tid_t tid){
+  //TODO : is -1 return false
+  return is_child(tid,true);
+}
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -85,13 +119,30 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
+/* process_wait希望我们实现以下功能：
+　　a) 等待子进程的结束，并返回它的退出状态。Here we need we get the thread's exit status
+　　b) 如果它被内核终止，返回-1。
+　　c) 如果TID非法 or 它不是调用函数体的孩子 or process_wait已经被成功执行，立即返回-1，且不等待。*/
+/*
+process_wait()is used to wait the exit of the new created thread(child_tid).
+process_wait的作用是用来等待新创建线程的结束
+*/
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  if(!can_wait(child_tid)){
+    return -1;
+  }
+  return read_pipe(child_tid,WAIT);
 }
 
-/* Free the current process's resources. */
+
+/* Free the current process's resources. 释放当前线程的资源
+　我们需要process_exit进行一些善后工作，主要包括：
+　　a) 关闭线程所打开的文件
+　　b) 删除它所有的孩子（remove_child）
+　　c) 将线程状态设置为DYING
+*/
 void
 process_exit (void)
 {
@@ -463,3 +514,20 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+// struct child_process* get_child_process (int pid)
+// {
+//   struct thread *t = thread_current();
+//   struct list_elem *e;
+//   for ( e = list_begin(&t->child_list);e != list_end(&t->child_list);
+//     e= list_next(e))
+//     {
+//       struct child_process *cp = list_entry(e,struct child_process,elem);
+//       if ((pid==cp->pid))
+//       {
+//         return cp;
+//       }
+      
+//     }
+// };
+

@@ -20,6 +20,9 @@ struct process{
 a pipe to record process's exit status to implement wait sys call
 read list 
 write list
+记录进程退出状态以实现系统等待调用的管道
+阅读清单
+写清单
 */
 enum action{
     EXEC,

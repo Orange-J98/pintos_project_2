@@ -99,13 +99,17 @@ intr_enable (void)
   return old_level;
 }
 
-/* Disables interrupts and returns the previous interrupt status. */
+/*
+  Disables interrupts and returns the previous interrupt status. 
+  禁止中断并返回前一个中断状态
+*/
 enum intr_level
 intr_disable (void) 
 {
   enum intr_level old_level = intr_get_level ();
 
   /* Disable interrupts by clearing the interrupt flag.
+     通过清除中断标志来禁用中断。
      See [IA32-v2b] "CLI" and [IA32-v3a] 5.8.1 "Masking Maskable
      Hardware Interrupts". */
   asm volatile ("cli" : : : "memory");

@@ -8,11 +8,14 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
+#include "threads/synch.h"
+#include "threads/malloc.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
@@ -20,6 +23,83 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+
+
+/*
+the list save all elem ready to read
+保存所有准备读的元素的列表
+*/
+static struct list read_list;
+/*
+the list to save all read request
+保存所有读请求的列表
+*/
+static struct list wait_list;
+
+struct read_elem{
+  int pid;
+  enum action action;
+  struct list_elem elem;
+  int value;
+};
+
+struct wait_elem{
+  int pid;
+  enum action action;
+  struct list_elem elem;
+  struct semaphore sema;
+};
+
+void pipe_init(){
+  list_init(&read_list);
+  list_init(&wait_list);
+}
+
+/*
+read the value in read list
+create a read request if what the request want is not in read_list yet.
+读取读取列表中的值。
+如果请求所需的内容不在read_list中，则创建一个读取请求。
+*/
+int read_pipe(int pid,enum action action){
+  enum intr_level old_level = intr_disable();
+  for(;;){
+    /*
+    check if what reader want already ready
+    检查reader想要的内容是否已经准备好
+    */
+   struct list_elem *e;
+   for(e = list_begin(&read_list); e != list_end(&read_list);e = list_next(e)){
+     struct read_elem *re = list_entry(e,struct read_elem,elem);
+     if (re->pid == pid && re->action == action)
+     {
+       list_remove(e);
+       int value = re->value;
+       free(re);
+       return value;
+     }
+     intr_set_level(old_level);
+   } 
+  }
+  /*
+  what reader want is not in read_list, create a wait request
+  reader想要的不再read_list里，创造一个等待请求
+  */
+ struct wait_elem *we = malloc(sizeof(struct wait_elem));
+ sema_init(&we->sema,0);
+ we->pid = pid;
+ we->action = action;
+ list_push_back(&wait_list,&we->elem);
+ sema_down(&we->sema);
+ /*
+  a writer has write something this reader want, the reader was unblocked and
+  clean the request and go to beginning
+  */
+ list_remove(&we->elem);
+ free(we);
+}
+
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -135,6 +215,8 @@ process_wait (tid_t child_tid UNUSED)
   }
   return read_pipe(child_tid,WAIT);
 }
+
+
 
 
 /* Free the current process's resources. 释放当前线程的资源
